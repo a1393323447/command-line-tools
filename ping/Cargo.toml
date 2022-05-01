@@ -11,3 +11,4 @@ crossterm = "0.23.2"
 rand = "0.8.5"
 socket2 = {version = "0.4.4", features = ["all"]}
 thiserror = "1.0.31"
+trust-dns-resolver = "0.21.2"

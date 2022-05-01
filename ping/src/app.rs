@@ -1,4 +1,4 @@
-use std::io::Read;
+use std::io::{Read, self};
 use std::net::{IpAddr, SocketAddr};
 use std::process::id;
 use std::time::{Duration, Instant};
@@ -68,7 +68,7 @@ pub struct PingApp {
 impl PingApp {
     pub fn from_args() -> PingApp {
         let matches = App::new("ping")
-            .arg(Arg::new("IP").takes_value(true).help("Remote ip address"))
+            .arg(Arg::new("REMOTE").takes_value(true).help("Remote ip address or url"))
             .arg(
                 Arg::new("TIMEOUT")
                     .takes_value(true)
@@ -116,11 +116,13 @@ impl PingApp {
             .version("0.1.0")
             .get_matches();
 
-        let addr = matches
-            .value_of("IP")
-            .expect("Please persent a ip addresss")
-            .parse()
-            .unwrap();
+        let host = matches
+            .value_of("REMOTE")
+            .expect("Please persent a ip addresss or an url");
+        let addr = match host.parse::<IpAddr>() {
+            Ok(ip) => ip,
+            Err(_) => look_up_ip(host).unwrap(),
+        };
         let timeout = matches
             .value_of("TIMEOUT")
             .map(parse_timeout);
@@ -176,7 +178,9 @@ impl PingApp {
         }
 
         if stats.min_time > stats.max_time {
+            // 超时
             stats.min_time = stats.max_time;
+            stats.total_time = stats.max_time * self.cnt;
         }
 
         let total = format!("{}", stats.total_packet_cnt).blue();
@@ -292,4 +296,12 @@ fn parse_timeout(timeout: &str) -> Duration {
         "ns" => Duration::from_nanos(num),
         _ => panic!("Invaild timeout unit: {}", unit),
     }
+}
+
+fn look_up_ip(host: &str) -> io::Result<IpAddr> {
+    let resolver = trust_dns_resolver::Resolver::default()?;
+    let ips = resolver.lookup_ip(host)?;
+    let ip = ips.into_iter().next().unwrap_or_else(|| panic!("cannot resolve the ip of {}", host));
+    
+    Ok(ip)
 }
