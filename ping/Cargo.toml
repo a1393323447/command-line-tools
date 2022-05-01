@@ -1,0 +1,13 @@
+[package]
+edition = "2021"
+name = "ping"
+version = "0.1.0"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+clap = "3.0.0"
+crossterm = "0.23.2"
+rand = "0.8.5"
+socket2 = {version = "0.4.4", features = ["all"]}
+thiserror = "1.0.31"

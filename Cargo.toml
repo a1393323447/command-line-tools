@@ -1,0 +1,13 @@
+[workspace]
+members = [
+  "cat",
+  "dd",
+  "grep",
+  "dump",
+  "ping"
+]
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = 3
