@@ -1,4 +1,4 @@
-use std::io::{Read, self};
+use std::io::{self, Read};
 use std::net::{IpAddr, SocketAddr};
 use std::process::id;
 use std::time::{Duration, Instant};
@@ -43,9 +43,7 @@ pub enum PingError {
     #[error("invaild ip packet: {:?}", .0)]
     InvalidIpPacket(#[from] ip::Error),
     #[error("invaild icmp packet: {:?}", .0)]
-    InvaildICMPPacket(#[from] icmp::Error),
-    #[error("internal error")]
-    InternalError,
+    InvaildICMPPacket(#[from] icmp::DecodeError),
     #[error("io error: {error}")]
     IoError {
         #[from]
@@ -56,6 +54,7 @@ pub enum PingError {
 pub type PingResult<T> = Result<T, PingError>;
 
 pub struct PingApp {
+    host: Option<String>,
     addr: IpAddr,
     timeout: Option<Duration>,
     ttl: Option<u32>,
@@ -68,7 +67,11 @@ pub struct PingApp {
 impl PingApp {
     pub fn from_args() -> PingApp {
         let matches = App::new("ping")
-            .arg(Arg::new("REMOTE").takes_value(true).help("Remote ip address or url"))
+            .arg(
+                Arg::new("REMOTE")
+                    .takes_value(true)
+                    .help("Remote ip address or url"),
+            )
             .arg(
                 Arg::new("TIMEOUT")
                     .takes_value(true)
@@ -119,13 +122,14 @@ impl PingApp {
         let host = matches
             .value_of("REMOTE")
             .expect("Please persent a ip addresss or an url");
-        let addr = match host.parse::<IpAddr>() {
-            Ok(ip) => ip,
-            Err(_) => look_up_ip(host).unwrap(),
+        let (host, addr) = match host.parse::<IpAddr>() {
+            Ok(ip) => (None, ip),
+            Err(_) => {
+                let (host_name, ip) = look_up_ip(host).unwrap();
+                (Some(host_name), ip)
+            }
         };
-        let timeout = matches
-            .value_of("TIMEOUT")
-            .map(parse_timeout);
+        let timeout = matches.value_of("TIMEOUT").map(parse_timeout);
         let ttl = matches.value_of("TTL").map(|ttl| ttl.parse().unwrap());
         let ident = matches.value_of("ID").map(|id| id.parse().unwrap());
         let seq_cnt = matches.value_of("SEQ").map(|seq| seq.parse().unwrap());
@@ -136,6 +140,7 @@ impl PingApp {
             .unwrap_or(4);
 
         PingApp {
+            host,
             addr,
             timeout,
             ttl,
@@ -150,7 +155,13 @@ impl PingApp {
         let ip = format!("{}", self.addr).blue();
         let size = format!("{}", self.size.unwrap_or(32)).blue();
 
-        println!("ping {} with {} bytes of data: ", ip, size);
+        match self.host {
+            Some(ref host) => {
+                let host = format!("{}", host).green();
+                println!("ping {} [{}] with {} bytes of data: ", host, ip, size);
+            }
+            None => println!("ping {} with {} bytes of data: ", ip, size),
+        }
 
         let mut stats = Statistics::new();
         stats.total_packet_cnt = self.cnt;
@@ -161,7 +172,10 @@ impl PingApp {
                     let ttl = data.ttl.map(|ttl| format!("{}", ttl).yellow());
                     let time = format!("{:?}", data.time).green();
                     match ttl {
-                        Some(ttl) => println!("Reply from {}: bytes={} time={} ttl={}", ip, size, time, ttl),
+                        Some(ttl) => println!(
+                            "Reply from {}: bytes={} time={} ttl={}",
+                            ip, size, time, ttl
+                        ),
                         None => println!("Reply from {}: bytes={} time ={}", ip, size, time),
                     }
                     stats.total_time += data.time;
@@ -202,9 +216,15 @@ impl PingApp {
         let min_time = format!("{:#2?}", stats.min_time).green();
         let avg_time = format!("{:#2?}", stats.total_time / stats.total_packet_cnt).green();
         println!("Ping statistics for {}: ", ip);
-        println!("    Packets: Sent = {}, Received = {}, Loss = {} ({}% loss)", total, recv, lost, lost_presentage);
+        println!(
+            "    Packets: Sent = {}, Received = {}, Loss = {} ({}% loss)",
+            total, recv, lost, lost_presentage
+        );
         println!("Approximate round trip times in milli-seconds: ");
-        println!("    Minimum = {}, Maximum = {}, Average = {}", min_time, max_time, avg_time);
+        println!(
+            "    Minimum = {}, Maximum = {}, Average = {}",
+            min_time, max_time, avg_time
+        );
     }
 
     fn ping(&self) -> PingResult<Data> {
@@ -231,14 +251,10 @@ impl PingApp {
         };
 
         let mut socket = if dest.is_ipv4() {
-            if request.encode::<IcmpV4>(&mut buffer).is_err() {
-                return Err(PingError::InternalError);
-            }
+            request.encode::<IcmpV4>(&mut buffer);
             Socket::new(Domain::IPV4, Type::RAW, Some(Protocol::ICMPV4))?
         } else {
-            if request.encode::<IcmpV6>(&mut buffer).is_err() {
-                return Err(PingError::InternalError);
-            }
+            request.encode::<IcmpV6>(&mut buffer);
             Socket::new(Domain::IPV6, Type::RAW, Some(Protocol::ICMPV6))?
         };
 
@@ -288,7 +304,9 @@ fn parse_timeout(timeout: &str) -> Duration {
         }
     }
 
-    let num = num.parse().unwrap_or_else(|_| panic!("Invaild timeout num: {}", num));
+    let num = num
+        .parse()
+        .unwrap_or_else(|_| panic!("Invaild timeout num: {}", num));
     let unit_str: &str = &unit;
     match unit_str {
         "" | "ms" => Duration::from_millis(num),
@@ -298,10 +316,16 @@ fn parse_timeout(timeout: &str) -> Duration {
     }
 }
 
-fn look_up_ip(host: &str) -> io::Result<IpAddr> {
+fn look_up_ip(host: &str) -> io::Result<(String, IpAddr)> {
     let resolver = trust_dns_resolver::Resolver::default()?;
-    let ips = resolver.lookup_ip(host)?;
-    let ip = ips.into_iter().next().unwrap_or_else(|| panic!("cannot resolve the ip of {}", host));
-    
-    Ok(ip)
+    let lookup = resolver.lookup_ip(host)?;
+
+    let record = lookup
+        .as_lookup()
+        .record_iter()
+        .find(|record| record.data().is_some() && record.data().unwrap().to_ip_addr().is_some())
+        .unwrap_or_else(|| panic!("Cannot resolve ip for {}", host));
+    let host_name = record.name().to_string();
+    let ip = record.data().unwrap().to_ip_addr().unwrap();
+    Ok((host_name, ip))
 }
