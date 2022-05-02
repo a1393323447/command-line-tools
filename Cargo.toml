@@ -4,6 +4,7 @@ members = [
   "dd",
   "grep",
   "dump",
+  "whereis",
   "ping"
 ]
 

@@ -37,3 +37,11 @@
 ## 简单演示
 
 ![](imgs/ping-run.PNG)
+
+# whereis
+用于在系统环境变量目录中搜索指定文件, 并打印匹配结果。
+![](imgs/whereis.PNG)
+
+## 简单演示
+
+![](imgs/whereis-run.PNG)

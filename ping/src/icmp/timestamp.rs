@@ -68,7 +68,7 @@ use super::{write_checksum, DecodeError, DecodeResult, IcmpV4, HEADER_SIZE};
 use std::{
     fmt::Display,
     ops::{Add, Mul, Sub},
-    time::{SystemTime, Duration},
+    time::{Duration, SystemTime},
 };
 
 pub trait TimestampMessage {
