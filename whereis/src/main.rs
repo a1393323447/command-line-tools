@@ -10,7 +10,7 @@ fn main() {
         .arg(
             Arg::new("FILE")
                 .takes_value(true)
-                .help("A excutable file"),
+                .help("A file name"),
         )
         .about(concat!(
             "A simple program to print where a file is (Only search in dir in system environment variables)\n", 
