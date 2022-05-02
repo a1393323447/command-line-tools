@@ -6,6 +6,9 @@ pub fn whereis(file: &str) -> HashSet<PathBuf> {
 
     for (_, values) in vars {
         for path in values.split(";") {
+            if path.is_empty() {
+                continue;
+            }
             let mut path = PathBuf::from(path);
             path.push(file);
             if let Ok(path) = check_file(path) {
